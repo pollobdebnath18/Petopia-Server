@@ -5,10 +5,10 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 app.use(cors());
 dotenv.config();
+app.use(express.json());
 const port = process.env.PORT || 8000;
 
 const uri = process.env.MONGODB_URI;
-// "mongodb://petopia:HJMVKaZIcJwxPimC@ac-mpjzkew-shard-00-00.0wxl8hn.mongodb.net:27017,ac-mpjzkew-shard-00-01.0wxl8hn.mongodb.net:27017,ac-mpjzkew-shard-00-02.0wxl8hn.mongodb.net:27017/?ssl=true&replicaSet=atlas-13w1b2-shard-0&authSource=admin&appName=Cluster0";
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -40,6 +40,13 @@ async function run() {
       };
       const result = await petsCollection.findOne(query);
       res.send(result);
+    });
+
+    app.post("/pets", async (req, res) => {
+      const getData = req.body;
+      // console.log(getData, "getdata  ");
+      const result = await petsCollection.insertOne(getData);
+      res.json(result);
     });
 
     console.log(
