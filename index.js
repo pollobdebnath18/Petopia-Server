@@ -29,27 +29,43 @@ async function run() {
     const petsCollection = db.collection("pets");
 
     app.get("/pets", async (req, res) => {
-      const { search, species } = req.query;
+      try {
+        const { search, species, sort, email } = req.query;
 
-      let cursor;
+        let query = {};
 
-      if (search) {
-        cursor = await petsCollection.find({
-          petName: {
+        // search filter
+        if (search) {
+          query.petName = {
             $regex: search,
             $options: "i",
-          },
-        });
-      }
-      else if(species){
-        
-      }
-      else {
-        cursor = petsCollection.find();
-      }
+          };
+        }
 
-      const result = await cursor.toArray();
-      res.send(result);
+        // species filter
+        if (species) {
+          query.species = species;
+        }
+
+        //my-listings
+        if (email) {
+          query.ownerEmail = email;
+        }
+
+        let cursor = petsCollection.find(query);
+        //sort
+        if (sort == "low-high") {
+          cursor = cursor.sort({ adoptionFee: 1 });
+        }
+        if (sort == "high-low") {
+          cursor = cursor.sort({ adoptionFee: -1 });
+        }
+        const result = await cursor.toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.log(error);
+      }
     });
 
     app.get("/pets/:petsId", async (req, res) => {
@@ -62,10 +78,48 @@ async function run() {
     });
 
     app.post("/pets", async (req, res) => {
-      const getData = req.body;
+      const petsData = req.body;
       // console.log(getData, "getdata  ");
-      const result = await petsCollection.insertOne(getData);
+      petsData.adoptionFee = Number(petsData.adoptionFee);
+      petsData.age = Number(petsData.age);
+
+      const result = await petsCollection.insertOne(petsData);
       res.json(result);
+    });
+
+    app.delete("/pets/:petsId", async (req, res) => {
+      try {
+        const { petsId } = req.params;
+        const { email } = req.query; // 👈 frontend sends user email
+
+        if (!ObjectId.isValid(petsId)) {
+          return res.status(400).send({ message: "Invalid pet ID" });
+        }
+
+        const pet = await petsCollection.findOne({
+          _id: new ObjectId(petsId),
+        });
+
+        if (!pet) {
+          return res.status(404).send({ message: "Pet not found" });
+        }
+
+        // 🔒 AUTH CHECK
+        if (pet.ownerEmail !== email) {
+          return res.status(403).send({
+            message: "You are not allowed to delete this pet",
+          });
+        }
+
+        const result = await petsCollection.deleteOne({
+          _id: new ObjectId(petsId),
+        });
+
+        res.send(result);
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ message: "Failed to delete pet" });
+      }
     });
 
     console.log(
