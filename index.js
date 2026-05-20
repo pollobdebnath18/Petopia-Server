@@ -27,6 +27,70 @@ async function run() {
     // await client.db("admin").command({ ping: 1 });
     const db = client.db("petopiadb");
     const petsCollection = db.collection("pets");
+    const requestCollection = db.collection("requests");
+
+    app.post("/requests", async (req, res) => {
+      try {
+        const requestData = req.body;
+
+        // CHECK EXISTING REQUEST
+        const alreadyRequested = await requestCollection.findOne({
+          petId: requestData.petId,
+          email: requestData.email,
+        });
+
+        if (alreadyRequested) {
+          return res.status(400).send({
+            message: "You already requested this pet",
+          });
+        }
+
+        const result = await requestCollection.insertOne({
+          ...requestData,
+          createdAt: new Date(),
+        });
+
+        res.send(result);
+      } catch (error) {
+        console.log(error);
+
+        res.status(500).send({
+          message: "Failed to create request",
+        });
+      }
+    });
+
+    app.post("/requests", async (req, res) => {
+      try {
+        const requestData = req.body;
+
+        // ✅ check existing request
+        const alreadyRequested = await requestCollection.findOne({
+          petId: requestData.petId,
+          email: requestData.email,
+        });
+
+        if (alreadyRequested) {
+          return res.status(400).send({
+            message: "You already requested this pet",
+          });
+        }
+
+        // ✅ insert request
+        const result = await requestCollection.insertOne({
+          ...requestData,
+          createdAt: new Date(),
+        });
+
+        res.send(result);
+      } catch (error) {
+        console.log(error);
+
+        res.status(500).send({
+          message: "Failed to create request",
+        });
+      }
+    });
 
     app.get("/pets", async (req, res) => {
       try {
@@ -85,6 +149,46 @@ async function run() {
 
       const result = await petsCollection.insertOne(petsData);
       res.json(result);
+    });
+
+    app.patch("/pets/:petsId", async (req, res) => {
+      try {
+        const { petsId } = req.params;
+        const { email } = req.query;
+
+        if (!email) {
+          return res.status(400).send({ message: "Email is required" });
+        }
+
+        const query = { _id: new ObjectId(petsId) };
+
+        const pet = await petsCollection.findOne(query);
+
+        if (!pet) {
+          return res.status(404).send({ message: "Pet not found" });
+        }
+
+        // 🔒 AUTH CHECK
+        if (pet.ownerEmail !== email) {
+          return res.status(403).send({
+            message: "You are not allowed to update this pet",
+          });
+        }
+
+        // 📦 UPDATE DATA
+        const updateData = req.body;
+
+        const updateDoc = {
+          $set: updateData,
+        };
+
+        const result = await petsCollection.updateOne(query, updateDoc);
+
+        res.send(result);
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ message: "Failed to update pet" });
+      }
     });
 
     app.delete("/pets/:petsId", async (req, res) => {
