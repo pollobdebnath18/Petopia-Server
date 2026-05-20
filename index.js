@@ -29,7 +29,26 @@ async function run() {
     const petsCollection = db.collection("pets");
 
     app.get("/pets", async (req, res) => {
-      const result = await petsCollection.find().toArray();
+      const { search, species } = req.query;
+
+      let cursor;
+
+      if (search) {
+        cursor = await petsCollection.find({
+          petName: {
+            $regex: search,
+            $options: "i",
+          },
+        });
+      }
+      else if(species){
+        
+      }
+      else {
+        cursor = petsCollection.find();
+      }
+
+      const result = await cursor.toArray();
       res.send(result);
     });
 
