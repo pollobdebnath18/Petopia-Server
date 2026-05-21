@@ -2,6 +2,7 @@ const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
 const app = express();
 app.use(cors());
 dotenv.config();
@@ -18,6 +19,29 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
+
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
+);
+
+const verifyToken = async (req, res, next) => {
+  const authHeader = req?.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  const token = authHeader.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  // console.log(token);
+  try {
+    const { payload } = await jwtVerify(token, JWKS);
+    // console.log(payload);
+    next();
+  } catch (error) {
+    return res.status(403).json({ message: "Forrbidden" });
+  }
+};
 
 async function run() {
   try {
@@ -84,7 +108,7 @@ async function run() {
           return res.status(404).send({ message: "Request not found" });
         }
 
-        //  Update selected request
+        //  update request status
         await requestCollection.updateOne(
           { _id: new ObjectId(requestId) },
           {
@@ -95,8 +119,19 @@ async function run() {
           },
         );
 
-        //  If APPROVED → hide/reject all others for same pet
+        //  IF APPROVED → LOCK PET
         if (status === "approved") {
+          await petsCollection.updateOne(
+            { _id: new ObjectId(request.petId) },
+            {
+              $set: {
+                isAdopted: true,
+                adoptedBy: request.email,
+              },
+            },
+          );
+
+          //  reject all other requests
           await requestCollection.updateMany(
             {
               petId: request.petId,
@@ -104,7 +139,7 @@ async function run() {
             },
             {
               $set: {
-                status: "rejected", // or "hidden"
+                status: "rejected",
                 updatedAt: new Date(),
               },
             },
@@ -118,36 +153,61 @@ async function run() {
       }
     });
 
-    app.post("/requests", async (req, res) => {
-      try {
-        const requestData = req.body;
+   app.post("/requests", async (req, res) => {
+     try {
+       const requestData = req.body;
 
-        // CHECK EXISTING REQUEST
-        const alreadyRequested = await requestCollection.findOne({
-          petId: requestData.petId,
-          email: requestData.email,
-        });
+       if (!requestData.petId || !requestData.email) {
+         return res.status(400).send({
+           message: "Missing petId or email",
+         });
+       }
 
-        if (alreadyRequested) {
-          return res.status(400).send({
-            message: "You already requested this pet",
-          });
-        }
+       const pet = await petsCollection.findOne({
+         _id: new ObjectId(requestData.petId),
+       });
 
-        const result = await requestCollection.insertOne({
-          ...requestData,
-          createdAt: new Date(),
-        });
+       if (!pet) {
+         return res.status(404).send({ message: "Pet not found" });
+       }
 
-        res.send(result);
-      } catch (error) {
-        console.log(error);
+       // 🚫 OWNER CHECK
+       if (pet.ownerEmail === requestData.email) {
+         return res.status(403).send({
+           message: "You cannot adopt your own pet",
+         });
+       }
 
-        res.status(500).send({
-          message: "Failed to create request",
-        });
-      }
-    });
+       // 🚫 ALREADY ADOPTED CHECK
+       if (pet.isAdopted) {
+         return res.status(400).send({
+           message: "This pet is already adopted",
+         });
+       }
+
+       const alreadyRequested = await requestCollection.findOne({
+         petId: requestData.petId,
+         email: requestData.email,
+       });
+
+       if (alreadyRequested) {
+         return res.status(400).send({
+           message: "You already requested this pet",
+         });
+       }
+
+       const result = await requestCollection.insertOne({
+         ...requestData,
+         status: "pending",
+         createdAt: new Date(),
+       });
+
+       res.send(result);
+     } catch (error) {
+       console.log(error);
+       res.status(500).send({ message: "Failed to create request" });
+     }
+   });
 
     app.delete("/requests/:requestId", async (req, res) => {
       try {
@@ -222,25 +282,64 @@ async function run() {
       }
     });
 
-    app.get("/pets/:petsId", async (req, res) => {
-      const { petsId } = req.params;
-      const query = {
-        _id: new ObjectId(petsId),
-      };
-      const result = await petsCollection.findOne(query);
-      res.send(result);
+    app.get("/pets/:petsId", verifyToken, async (req, res) => {
+      try {
+        const { petsId } = req.params;
+
+        // ✅ validate ObjectId
+        if (!ObjectId.isValid(petsId)) {
+          return res.status(400).send({ message: "Invalid pet ID" });
+        }
+
+        const result = await petsCollection.findOne({
+          _id: new ObjectId(petsId),
+        });
+
+        if (!result) {
+          return res.status(404).send({ message: "Pet not found" });
+        }
+
+        // ✅ ensure default field exists (VERY IMPORTANT for frontend)
+        result.isAdopted = result.isAdopted ?? false;
+
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Server error" });
+      }
     });
 
-    app.post("/pets", async (req, res) => {
-      const petsData = req.body;
-      // console.log(getData, "getdata  ");
-      petsData.adoptionFee = Number(petsData.adoptionFee);
-      petsData.age = Number(petsData.age);
+    app.post("/pets", verifyToken, async (req, res) => {
+      try {
+        const petsData = req.body;
 
-      const result = await petsCollection.insertOne(petsData);
-      res.json(result);
+        const age = Number(petsData.age);
+        const adoptionFee = Number(petsData.adoptionFee);
+
+        //  validation check
+        if (isNaN(age) || isNaN(adoptionFee)) {
+          return res.status(400).json({
+            message: "Age and Adoption Fee must be valid numbers",
+          });
+        }
+
+        const newPet = {
+          ...petsData,
+          age,
+          adoptionFee,
+          isAdopted: false, // ⭐ ADD THIS
+
+          createdAt: new Date(),
+        };
+
+        const result = await petsCollection.insertOne(newPet);
+
+        res.json(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Failed to create pet" });
+      }
     });
-
     app.patch("/pets/:petsId", async (req, res) => {
       try {
         const { petsId } = req.params;
