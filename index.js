@@ -56,6 +56,68 @@ async function run() {
       }
     });
 
+    app.get("/requests/pet/:petId", async (req, res) => {
+      try {
+        const { petId } = req.params;
+
+        const result = await requestCollection
+          .find({ petId })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to get requests" });
+      }
+    });
+
+    app.patch("/requests/:requestId", async (req, res) => {
+      try {
+        const { requestId } = req.params;
+        const { status } = req.body;
+
+        const request = await requestCollection.findOne({
+          _id: new ObjectId(requestId),
+        });
+
+        if (!request) {
+          return res.status(404).send({ message: "Request not found" });
+        }
+
+        //  Update selected request
+        await requestCollection.updateOne(
+          { _id: new ObjectId(requestId) },
+          {
+            $set: {
+              status,
+              updatedAt: new Date(),
+            },
+          },
+        );
+
+        //  If APPROVED → hide/reject all others for same pet
+        if (status === "approved") {
+          await requestCollection.updateMany(
+            {
+              petId: request.petId,
+              _id: { $ne: new ObjectId(requestId) },
+            },
+            {
+              $set: {
+                status: "rejected", // or "hidden"
+                updatedAt: new Date(),
+              },
+            },
+          );
+        }
+
+        res.send({ message: "Updated successfully" });
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ message: "Update failed" });
+      }
+    });
+
     app.post("/requests", async (req, res) => {
       try {
         const requestData = req.body;
