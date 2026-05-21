@@ -53,7 +53,7 @@ async function run() {
     const petsCollection = db.collection("pets");
     const requestCollection = db.collection("requests");
 
-    app.get("/requests", async (req, res) => {
+    app.get("/requests",verifyToken, async (req, res) => {
       try {
         const { email } = req.query;
 
@@ -153,63 +153,63 @@ async function run() {
       }
     });
 
-   app.post("/requests", async (req, res) => {
-     try {
-       const requestData = req.body;
+    app.post("/requests", verifyToken, async (req, res) => {
+      try {
+        const requestData = req.body;
 
-       if (!requestData.petId || !requestData.email) {
-         return res.status(400).send({
-           message: "Missing petId or email",
-         });
-       }
+        if (!requestData.petId || !requestData.email) {
+          return res.status(400).send({
+            message: "Missing petId or email",
+          });
+        }
 
-       const pet = await petsCollection.findOne({
-         _id: new ObjectId(requestData.petId),
-       });
+        const pet = await petsCollection.findOne({
+          _id: new ObjectId(requestData.petId),
+        });
 
-       if (!pet) {
-         return res.status(404).send({ message: "Pet not found" });
-       }
+        if (!pet) {
+          return res.status(404).send({ message: "Pet not found" });
+        }
 
-       // 🚫 OWNER CHECK
-       if (pet.ownerEmail === requestData.email) {
-         return res.status(403).send({
-           message: "You cannot adopt your own pet",
-         });
-       }
+        //  OWNER CHECK
+        if (pet.ownerEmail === requestData.email) {
+          return res.status(403).send({
+            message: "You cannot adopt your own pet",
+          });
+        }
 
-       // 🚫 ALREADY ADOPTED CHECK
-       if (pet.isAdopted) {
-         return res.status(400).send({
-           message: "This pet is already adopted",
-         });
-       }
+        //  ALREADY ADOPTED CHECK
+        if (pet.isAdopted) {
+          return res.status(400).send({
+            message: "This pet is already adopted",
+          });
+        }
 
-       const alreadyRequested = await requestCollection.findOne({
-         petId: requestData.petId,
-         email: requestData.email,
-       });
+        const alreadyRequested = await requestCollection.findOne({
+          petId: requestData.petId,
+          email: requestData.email,
+        });
 
-       if (alreadyRequested) {
-         return res.status(400).send({
-           message: "You already requested this pet",
-         });
-       }
+        if (alreadyRequested) {
+          return res.status(400).send({
+            message: "You already requested this pet",
+          });
+        }
 
-       const result = await requestCollection.insertOne({
-         ...requestData,
-         status: "pending",
-         createdAt: new Date(),
-       });
+        const result = await requestCollection.insertOne({
+          ...requestData,
+          status: "pending",
+          createdAt: new Date(),
+        });
 
-       res.send(result);
-     } catch (error) {
-       console.log(error);
-       res.status(500).send({ message: "Failed to create request" });
-     }
-   });
+        res.send(result);
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ message: "Failed to create request" });
+      }
+    });
 
-    app.delete("/requests/:requestId", async (req, res) => {
+    app.delete("/requests/:requestId", verifyToken, async (req, res) => {
       try {
         const { requestId } = req.params;
         const email = req.query.email;
@@ -286,7 +286,7 @@ async function run() {
       try {
         const { petsId } = req.params;
 
-        // ✅ validate ObjectId
+        //  validate ObjectId
         if (!ObjectId.isValid(petsId)) {
           return res.status(400).send({ message: "Invalid pet ID" });
         }
@@ -299,7 +299,7 @@ async function run() {
           return res.status(404).send({ message: "Pet not found" });
         }
 
-        // ✅ ensure default field exists (VERY IMPORTANT for frontend)
+        //  ensure default field exists (VERY IMPORTANT for frontend)
         result.isAdopted = result.isAdopted ?? false;
 
         res.send(result);
@@ -327,7 +327,7 @@ async function run() {
           ...petsData,
           age,
           adoptionFee,
-          isAdopted: false, // ⭐ ADD THIS
+          isAdopted: false, //  ADD THIS
 
           createdAt: new Date(),
         };
@@ -357,14 +357,14 @@ async function run() {
           return res.status(404).send({ message: "Pet not found" });
         }
 
-        // 🔒 AUTH CHECK
+        //  AUTH CHECK
         if (pet.ownerEmail !== email) {
           return res.status(403).send({
             message: "You are not allowed to update this pet",
           });
         }
 
-        // 📦 UPDATE DATA
+        // UPDATE DATA
         const updateData = req.body;
 
         const updateDoc = {
@@ -383,7 +383,7 @@ async function run() {
     app.delete("/pets/:petsId", async (req, res) => {
       try {
         const { petsId } = req.params;
-        const { email } = req.query; // 👈 frontend sends user email
+        const { email } = req.query; //  frontend sends user email
 
         if (!ObjectId.isValid(petsId)) {
           return res.status(400).send({ message: "Invalid pet ID" });
@@ -397,7 +397,7 @@ async function run() {
           return res.status(404).send({ message: "Pet not found" });
         }
 
-        // 🔒 AUTH CHECK
+        //  AUTH CHECK
         if (pet.ownerEmail !== email) {
           return res.status(403).send({
             message: "You are not allowed to delete this pet",
