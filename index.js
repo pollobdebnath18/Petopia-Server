@@ -29,6 +29,33 @@ async function run() {
     const petsCollection = db.collection("pets");
     const requestCollection = db.collection("requests");
 
+    app.get("/requests", async (req, res) => {
+      try {
+        const { email } = req.query;
+
+        // validation
+        if (!email) {
+          return res.status(400).send({
+            message: "Email is required",
+          });
+        }
+
+        // find requests by user email
+        const result = await requestCollection
+          .find({ email })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.log(error);
+
+        res.status(500).send({
+          message: "Failed to get requests",
+        });
+      }
+    });
+
     app.post("/requests", async (req, res) => {
       try {
         const requestData = req.body;
@@ -60,35 +87,36 @@ async function run() {
       }
     });
 
-    app.post("/requests", async (req, res) => {
+    app.delete("/requests/:requestId", async (req, res) => {
       try {
-        const requestData = req.body;
+        const { requestId } = req.params;
+        const email = req.query.email;
 
-        // ✅ check existing request
-        const alreadyRequested = await requestCollection.findOne({
-          petId: requestData.petId,
-          email: requestData.email,
-        });
-
-        if (alreadyRequested) {
-          return res.status(400).send({
-            message: "You already requested this pet",
-          });
+        if (!email) {
+          return res.status(400).send({ message: "Email required" });
         }
 
-        // ✅ insert request
-        const result = await requestCollection.insertOne({
-          ...requestData,
-          createdAt: new Date(),
+        const request = await requestCollection.findOne({
+          _id: new ObjectId(requestId),
+        });
+
+        if (!request) {
+          return res.status(404).send({ message: "Request not found" });
+        }
+
+        //  AUTH CHECK
+        if (request.email !== email) {
+          return res.status(403).send({ message: "Not allowed" });
+        }
+
+        const result = await requestCollection.deleteOne({
+          _id: new ObjectId(requestId),
         });
 
         res.send(result);
       } catch (error) {
         console.log(error);
-
-        res.status(500).send({
-          message: "Failed to create request",
-        });
+        res.status(500).send({ message: "Failed to delete request" });
       }
     });
 
