@@ -95,6 +95,17 @@ async function run() {
       }
     });
 
+    //MyListingCard -> for increase the request count
+    app.get("/requests/count/:petId", async (req, res) => {
+      const { petId } = req.params;
+
+      const count = await requestCollection.countDocuments({
+        petId,
+      });
+
+      res.send({ count });
+    });
+
     app.patch("/requests/:requestId", async (req, res) => {
       try {
         const { requestId } = req.params;
@@ -209,6 +220,7 @@ async function run() {
       }
     });
 
+    //my requests -> delete each request
     app.delete("/requests/:requestId", verifyToken, async (req, res) => {
       try {
         const { requestId } = req.params;
