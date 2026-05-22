@@ -53,7 +53,7 @@ async function run() {
     const petsCollection = db.collection("pets");
     const requestCollection = db.collection("requests");
 
-    app.get("/requests",verifyToken, async (req, res) => {
+    app.get("/requests", verifyToken, async (req, res) => {
       try {
         const { email } = req.query;
 
@@ -352,7 +352,7 @@ async function run() {
         res.status(500).json({ message: "Failed to create pet" });
       }
     });
-    app.patch("/pets/:petsId", async (req, res) => {
+    app.patch("/pets/:petsId", verifyToken, async (req, res) => {
       try {
         const { petsId } = req.params;
         const { email } = req.query;
@@ -392,7 +392,7 @@ async function run() {
       }
     });
 
-    app.delete("/pets/:petsId", async (req, res) => {
+    app.delete("/pets/:petsId", verifyToken, async (req, res) => {
       try {
         const { petsId } = req.params;
         const { email } = req.query; //  frontend sends user email
@@ -442,5 +442,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`Example app listening on Port ${port}`);
+  console.log(`Project app listening on Port ${port}`);
 });
